@@ -100,34 +100,7 @@ const App = () => {
     return newField;
   }, [frameWidth, frameHeight]);
 
-  useEffect(() => {
-    const newField = generateField(rows, columns, fieldType, direction, intensity, spiral, spiralIntensity, spacing, xOffset, yOffset);
-    setField(newField);
-  }, [rows, columns, fieldType, direction, intensity, spiral, spiralIntensity, spacing, xOffset, yOffset, generateField]);
-
-  useEffect(() => {
-    window.onmessage = (event) => {
-      const message = event.data.pluginMessage;
-      if (message.type === "frame-selected") {
-        const { width, height, backgroundColor } = message;
-        setActualFrameWidth(width);
-        setActualFrameHeight(height);
-        updateFrameDimensions(width, height);
-        if (backgroundColor) {
-          setBackgroundColor(backgroundColor);
-          setShapeColor(getComplementaryColor(backgroundColor));
-        }
-      } else if (message.type === "no-frame-selected") {
-        setActualFrameWidth(600);
-        setActualFrameHeight(600);
-        updateFrameDimensions(600, 600);
-        setBackgroundColor('#1e1e1e');
-        setShapeColor('#ffffff');
-      }
-    };
-  }, []);
-
-  const updateFrameDimensions = (width, height) => {
+  const updateFrameDimensions = useCallback((width, height) => {
     if (fillParent) {
       const aspectRatio = width / height;
       let scaledWidth, scaledHeight;
@@ -148,25 +121,19 @@ const App = () => {
       setFrameWidth(600);
       setFrameHeight(600);
     }
-  };
+  }, [fillParent]);
 
-  useEffect(() => {
-    updateFrameDimensions(actualFrameWidth, actualFrameHeight);
-  }, [fillParent, actualFrameWidth, actualFrameHeight]);
-
-  const getComplementaryColor = (hexColor) => {
-    // Convert hex to RGB
+  const getComplementaryColor = useCallback((hexColor) => {
     let r = parseInt(hexColor.slice(1, 3), 16);
     let g = parseInt(hexColor.slice(3, 5), 16);
     let b = parseInt(hexColor.slice(5, 7), 16);
 
-    // Convert RGB to HSL
     r /= 255; g /= 255; b /= 255;
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
     let h, s, l = (max + min) / 2;
 
     if (max === min) {
-      h = s = 0; // achromatic
+      h = s = 0;
     } else {
       const d = max - min;
       s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
@@ -178,22 +145,10 @@ const App = () => {
       h /= 6;
     }
 
-    // Adjust hue for complementary color
     h = (h + 0.5) % 1;
-
-    // Ensure sufficient contrast
-    if (l > 0.5) {
-      // For light backgrounds, darken the complementary color
-      l = Math.max(0, l - 0.5);
-    } else {
-      // For dark backgrounds, lighten the complementary color
-      l = Math.min(1, l + 0.5);
-    }
-
-    // Increase saturation
+    l = l > 0.5 ? Math.max(0, l - 0.5) : Math.min(1, l + 0.5);
     s = Math.min(1, s + 0.3);
 
-    // Convert back to RGB
     const hue2rgb = (p, q, t) => {
       if (t < 0) t += 1;
       if (t > 1) t -= 1;
@@ -209,9 +164,40 @@ const App = () => {
     g = hue2rgb(p, q, h);
     b = hue2rgb(p, q, h - 1/3);
 
-    // Convert RGB back to hex
     return `#${Math.round(r * 255).toString(16).padStart(2, '0')}${Math.round(g * 255).toString(16).padStart(2, '0')}${Math.round(b * 255).toString(16).padStart(2, '0')}`;
-  };
+  }, []);
+
+  useEffect(() => {
+    const newField = generateField(rows, columns, fieldType, direction, intensity, spiral, spiralIntensity, spacing, xOffset, yOffset);
+    setField(newField);
+  }, [rows, columns, fieldType, direction, intensity, spiral, spiralIntensity, spacing, xOffset, yOffset, generateField]);
+
+  useEffect(() => {
+    window.onmessage = (event) => {
+      const message = event.data.pluginMessage;
+      if (message.type === "frame-selected") {
+        const { width, height, backgroundColor } = message;
+        setActualFrameWidth(width);
+        setActualFrameHeight(height);
+        updateFrameDimensions(width, height);
+        if (backgroundColor) {
+          setBackgroundColor(backgroundColor);
+          const complementaryColor = getComplementaryColor(backgroundColor);
+          setShapeColor(complementaryColor);
+        }
+      } else if (message.type === "no-frame-selected") {
+        setActualFrameWidth(600);
+        setActualFrameHeight(600);
+        updateFrameDimensions(600, 600);
+        setBackgroundColor('#1e1e1e');
+        setShapeColor('#ffffff');
+      }
+    };
+  }, [updateFrameDimensions, getComplementaryColor]);
+
+  useEffect(() => {
+    updateFrameDimensions(actualFrameWidth, actualFrameHeight);
+  }, [fillParent, actualFrameWidth, actualFrameHeight, updateFrameDimensions]);
 
   const getGradientOpacity = useCallback((vector) => {
     const { x, y, r } = vector;
@@ -294,10 +280,6 @@ const App = () => {
     }
   }, [shape, shapeSize, vectorScale, lineThickness, getGradientOpacity, shapeColor]);
 
-  const handleShapeColorChange = (color) => {
-    setShapeColor(color);
-  };
-
   const renderControl = (label, value, setValue, min, max, step, unit = '', disabled = false) => (
     <div>
       <label>
@@ -353,7 +335,7 @@ const App = () => {
 
       const svgData = new XMLSerializer().serializeToString(svgElement);
       const cleanedSvgData = svgData.replace(/xmlns="[^"]*"/, '');
-
+      
       parent.postMessage({
         pluginMessage: {
           type: 'create-svg',
@@ -384,7 +366,7 @@ const App = () => {
               transform: 'translate(-50%, -50%)',
             }}
           >
-            {field && field.length > 0 ? field.map(renderVector) : null}
+            {field && field.length > 0 ? field.map((vector, index) => renderVector(vector, index)) : null}
           </svg>
         </div>
         <div className="form">
@@ -419,14 +401,6 @@ const App = () => {
               ]}
             />
 
-            <ColorInput
-              label="Shape Color"
-              value={shapeColor}
-              onChange={handleShapeColorChange}
-              placeholder="Pick a color"
-              withEyeDropper={true}
-            />
-
             <Select
               label="Gradient Type"
               value={gradientType}
@@ -453,6 +427,13 @@ const App = () => {
               />
             </div>
 
+            <ColorInput
+              label="Shape Color"
+              value={shapeColor}
+              onChange={setShapeColor}
+              placeholder="Pick a color"
+            />
+
             {renderControl("X Offset", xOffset, setXOffset, -50, 50, 1, "%")}
             {renderControl("Y Offset", yOffset, setYOffset, -50, 50, 1, "%")}
             {renderControl("Field Rotation", direction, setDirection, 0, 360, 1, "°")}
@@ -467,6 +448,7 @@ const App = () => {
             {renderControl("Line Length", vectorScale, setVectorScale, 0.1, 12, 0.1, "x")}
             {renderControl("Line Thickness", lineThickness, setLineThickness, 0.1, 12, 0.1, "px", shape === 'dot' || shape === 'triangle')}
             {renderControl("Vector Spacing", spacing, setSpacing, 0.5, 2, 0.1, "x")}
+            {renderControl("Shape Size", shapeSize, setShapeSize, 0.1, 10, 0.1, "x", shape === 'line')}
             <Checkbox
               label="Fill parent frame"
               checked={fillParent}
