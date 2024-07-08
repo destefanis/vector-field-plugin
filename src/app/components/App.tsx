@@ -29,6 +29,10 @@ const App = () => {
   const [actualFrameHeight, setActualFrameHeight] = useState(600);
   const [backgroundColor, setBackgroundColor] = useState('#1e1e1e');
   const [shapeColor, setShapeColor] = useState('#ffffff');
+  const [customShape, setCustomShape] = useState(null);
+  const [customShapeViewBox, setCustomShapeViewBox] = useState(null);
+  const [customShapeSize, setCustomShapeSize] = useState(1);
+  const [isWaitingForVectorSelection, setIsWaitingForVectorSelection] = useState(false);
 
   const svgRef = useRef(null);
 
@@ -106,11 +110,9 @@ const App = () => {
       let scaledWidth, scaledHeight;
 
       if (aspectRatio > 1) {
-        // Wider than tall
         scaledWidth = 600;
         scaledHeight = 600 / aspectRatio;
       } else {
-        // Taller than wide
         scaledHeight = 600;
         scaledWidth = 600 * aspectRatio;
       }
@@ -152,17 +154,17 @@ const App = () => {
     const hue2rgb = (p, q, t) => {
       if (t < 0) t += 1;
       if (t > 1) t -= 1;
-      if (t < 1/6) return p + (q - p) * 6 * t;
-      if (t < 1/2) return q;
-      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
       return p;
     };
 
     const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
     const p = 2 * l - q;
-    r = hue2rgb(p, q, h + 1/3);
+    r = hue2rgb(p, q, h + 1 / 3);
     g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1/3);
+    b = hue2rgb(p, q, h - 1 / 3);
 
     return `#${Math.round(r * 255).toString(16).padStart(2, '0')}${Math.round(g * 255).toString(16).padStart(2, '0')}${Math.round(b * 255).toString(16).padStart(2, '0')}`;
   }, []);
@@ -185,6 +187,16 @@ const App = () => {
           const complementaryColor = getComplementaryColor(backgroundColor);
           setShapeColor(complementaryColor);
         }
+      } else if (message.type === "vector-selected") {
+        if (message.svg) {
+          parseSvgString(message.svg);
+        } else {
+          console.error('Received vector-selected message without SVG data');
+        }
+      } else if (message.type === "vector-selection-error") {
+        setIsWaitingForVectorSelection(false);
+        console.error(message.message);
+        // You might want to show this error message to the user
       } else if (message.type === "no-frame-selected") {
         setActualFrameWidth(600);
         setActualFrameHeight(600);
@@ -195,9 +207,52 @@ const App = () => {
     };
   }, [updateFrameDimensions, getComplementaryColor]);
 
+  const parseSvgString = (svgString) => {
+    console.log("Received SVG string:", svgString); // Log the received SVG string
+
+    if (!svgString || typeof svgString !== 'string') {
+      console.error('Invalid SVG string received:', svgString);
+      return;
+    }
+
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+
+    // Check for parsing errors
+    const parserError = svgDoc.querySelector('parsererror');
+    if (parserError) {
+      console.error('Error parsing SVG:', parserError.textContent);
+      return;
+    }
+
+    const svgElement = svgDoc.querySelector('svg');
+
+    if (svgElement) {
+      const viewBox = svgElement.getAttribute('viewBox');
+      setCustomShapeViewBox(viewBox);
+
+      const paths = Array.from(svgElement.querySelectorAll('path')).map(path => ({
+        d: path.getAttribute('d'),
+        fill: path.getAttribute('fill') || 'none',
+        stroke: path.getAttribute('stroke') || 'none',
+        strokeWidth: path.getAttribute('stroke-width') || '1'
+      }));
+
+      setCustomShape(paths);
+      setShape('custom');
+      setIsWaitingForVectorSelection(false);
+    } else {
+      console.error('No SVG element found in the parsed document');
+    }
+  };
+
   useEffect(() => {
     updateFrameDimensions(actualFrameWidth, actualFrameHeight);
   }, [fillParent, actualFrameWidth, actualFrameHeight, updateFrameDimensions]);
+
+  useEffect(() => {
+    console.log('Frame dimensions updated:', { actualFrameWidth, actualFrameHeight });
+  }, [actualFrameWidth, actualFrameHeight]);
 
   const getGradientOpacity = useCallback((vector) => {
     const { x, y, r } = vector;
@@ -220,6 +275,46 @@ const App = () => {
     const endY = vector.y + Math.sin(vector.angle) * scaledLength;
     const opacity = getGradientOpacity(vector);
     const color = `${shapeColor}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`;
+
+    if (shape === 'custom' && customShape && customShapeViewBox) {
+      const [, , vbWidth, vbHeight] = customShapeViewBox.split(' ').map(Number);
+      const aspectRatio = vbWidth / vbHeight;
+
+      // Calculate base size relative to the current frame dimensions
+      const cellSize = Math.min(frameWidth / columns, frameHeight / rows);
+      const baseSize = cellSize * shapeSize;
+
+      // Maintain aspect ratio while fitting within baseSize
+      let scaledWidth, scaledHeight;
+      if (aspectRatio > 1) {
+        scaledWidth = baseSize;
+        scaledHeight = baseSize / aspectRatio;
+      } else {
+        scaledHeight = baseSize;
+        scaledWidth = baseSize * aspectRatio;
+      }
+
+      return (
+        <g key={index} transform={`translate(${endX - scaledWidth / 2}, ${endY - scaledHeight / 2}) rotate(${vector.angle * 180 / Math.PI})`}>
+          <svg
+            viewBox={customShapeViewBox}
+            width={scaledWidth}
+            height={scaledHeight}
+            style={{ overflow: 'visible' }}
+          >
+            {customShape.map((path, pathIndex) => (
+              <path
+                key={pathIndex}
+                d={path.d}
+                fill={path.fill === 'none' ? 'none' : color}
+                stroke={path.stroke === 'none' ? 'none' : color}
+                strokeWidth={path.strokeWidth}
+              />
+            ))}
+          </svg>
+        </g>
+      );
+    }
 
     switch (shape) {
       case 'line':
@@ -278,7 +373,15 @@ const App = () => {
       default:
         return null;
     }
-  }, [shape, shapeSize, vectorScale, lineThickness, getGradientOpacity, shapeColor]);
+  }, [shape, shapeSize, vectorScale, lineThickness, getGradientOpacity, shapeColor, customShape, customShapeViewBox, customShapeSize]);
+
+  const handleShapeChange = (value) => {
+    setShape(value);
+    if (value === 'custom') {
+      setIsWaitingForVectorSelection(true);
+      parent.postMessage({ pluginMessage: { type: 'request-vector-selection' } }, '*');
+    }
+  };
 
   const renderControl = (label, value, setValue, min, max, step, unit = '', disabled = false) => (
     <div>
@@ -313,6 +416,8 @@ const App = () => {
     setXOffset(0);
     setYOffset(0);
     setFillParent(true);
+    setCustomShape(null);
+    setIsWaitingForVectorSelection(false);
   };
 
   const sendSvgToFigma = () => {
@@ -320,22 +425,37 @@ const App = () => {
       const svgElement = svgRef.current.cloneNode(true);
       const scaleFactor = actualFrameWidth / frameWidth;
 
-      // Apply scaling transformation to the SVG
+      // Apply scaling transformation to the root SVG
       svgElement.setAttribute('viewBox', `0 0 ${frameWidth} ${frameHeight}`);
       svgElement.setAttribute('width', actualFrameWidth);
       svgElement.setAttribute('height', actualFrameHeight);
 
-      // Scale all child elements
+      // Function to apply scaling only to top-level elements
+      const applyScalingToTopLevelElements = (element) => {
+        const transform = element.getAttribute('transform') || '';
+        const newTransform = `${transform} scale(${scaleFactor})`.trim();
+        element.setAttribute('transform', newTransform);
+      };
+
+      // Apply scaling to all immediate children of the root SVG
       const childElements = svgElement.children;
       for (let i = 0; i < childElements.length; i++) {
-        const element = childElements[i];
-        const transform = element.getAttribute('transform') || '';
-        element.setAttribute('transform', `${transform} scale(${scaleFactor})`);
+        applyScalingToTopLevelElements(childElements[i]);
       }
 
       const svgData = new XMLSerializer().serializeToString(svgElement);
       const cleanedSvgData = svgData.replace(/xmlns="[^"]*"/, '');
-      
+
+      console.log('Sending data to Figma:', {
+        svg: cleanedSvgData,
+        width: actualFrameWidth,
+        height: actualFrameHeight,
+        backgroundColor,
+        frameWidth,
+        frameHeight,
+        scaleFactor
+      });
+
       parent.postMessage({
         pluginMessage: {
           type: 'create-svg',
@@ -345,6 +465,8 @@ const App = () => {
           backgroundColor: backgroundColor,
         },
       }, '*');
+    } else {
+      console.error('SVG ref is null');
     }
   };
 
@@ -391,13 +513,14 @@ const App = () => {
             <Select
               label="Shape"
               value={shape}
-              onChange={setShape}
+              onChange={handleShapeChange}
               withScrollArea={false}
               data={[
                 { value: 'line', label: 'Lines' },
                 { value: 'dot', label: 'Dots' },
                 { value: 'arrow', label: 'Arrows' },
                 { value: 'triangle', label: 'Triangles' },
+                { value: 'custom', label: isWaitingForVectorSelection ? 'Select a vector in Figma' : 'Custom Shape' },
               ]}
             />
 
