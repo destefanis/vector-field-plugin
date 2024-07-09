@@ -17,6 +17,20 @@
   /* border-radius: 16px; */
 }
 
+.size-label {
+  background-color: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-weight: 400;
+  line-height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  position: absolute;
+  z-index: 5;
+  bottom: 8px;
+  left: 8px;
+  font-size: 11px;
+}
+
 .divider {
   display: block;
   margin: 24px -20px;

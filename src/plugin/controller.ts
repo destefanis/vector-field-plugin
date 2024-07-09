@@ -88,6 +88,8 @@ function createSvgNode(svgString, width, height, backgroundColor) {
   // Create a new node from the SVG string
   const node = figma.createNodeFromSvg(svgString);
 
+  node.name = "Vector Field Generator";
+
   // Set the size of the node
   if (width && height) {
     node.resize(width, height);

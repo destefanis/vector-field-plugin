@@ -526,6 +526,9 @@ const App = () => {
           >
             {field.map((vector, index) => renderVector(vector, index))}
           </svg>
+          <div className="size-label">
+            {Math.round(actualFrameWidth)}x{Math.round(actualFrameHeight)}
+          </div>
         </div>
         <div className="form">
           <div className="fields">
