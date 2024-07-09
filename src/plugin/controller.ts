@@ -1,4 +1,4 @@
-figma.showUI(__html__, { width: 952, height: 600 });
+figma.showUI(__html__, { width: 860, height: 600 });
 
 let lastSelectedFrame = null;
 

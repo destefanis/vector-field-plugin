@@ -556,23 +556,6 @@ const App = () => {
         <div className="form">
           <div className="fields">
             <Select
-              label="Field Type"
-              value={fieldType}
-              onChange={setFieldType}
-              withScrollArea={false}
-              data={[
-                { value: 'magnetic', label: 'Magnetic Field' },
-                { value: 'fluid', label: 'Fluid Flow' },
-                { value: 'electric', label: 'Electric Field' },
-                { value: 'vortex', label: 'Vortex' },
-                { value: 'sink', label: 'Sink' },
-                { value: 'source', label: 'Source' },
-                { value: 'saddle', label: 'Saddle Point' },
-                { value: 'wind', label: 'Wind Flow' },
-              ]}
-            />
-
-            <Select
               label="Shape"
               value={shape}
               onChange={handleShapeChange}
@@ -586,16 +569,32 @@ const App = () => {
               ]}
             />
 
+            {(shape === 'custom') && (
+              <>
+                <Textarea
+                  label="Paste SVG Code"
+                  value={pastedSvg}
+                  onChange={handleSvgPaste}
+                  placeholder="Paste your SVG code here"
+                  minRows={4}
+                />
+              </>
+            )}
+
             <Select
-              label="Gradient Type"
-              value={gradientType}
-              onChange={setGradientType}
+              label="Field Type"
+              value={fieldType}
+              onChange={setFieldType}
               withScrollArea={false}
               data={[
-                { value: 'none', label: 'None' },
-                // { value: 'radial', label: 'Radial Gradient' },
-                { value: 'angular', label: 'Angular Gradient' },
-                { value: 'wave', label: 'Wave Gradient' },
+                { value: 'magnetic', label: 'Magnetic Field' },
+                { value: 'fluid', label: 'Fluid Flow' },
+                { value: 'electric', label: 'Electric Field' },
+                { value: 'vortex', label: 'Vortex' },
+                { value: 'sink', label: 'Sink' },
+                { value: 'source', label: 'Source' },
+                { value: 'saddle', label: 'Saddle Point' },
+                { value: 'wind', label: 'Wind Flow' },
               ]}
             />
 
@@ -617,7 +616,29 @@ const App = () => {
               value={shapeColor}
               onChange={setShapeColor}
               placeholder="Pick a color"
+              leftSectionPointerEvents="auto"
             />
+
+            <Select
+              label="Gradient Type"
+              value={gradientType}
+              onChange={setGradientType}
+              withScrollArea={false}
+              data={[
+                { value: 'none', label: 'None' },
+                // { value: 'radial', label: 'Radial Gradient' },
+                { value: 'angular', label: 'Angular Gradient' },
+                { value: 'wave', label: 'Wave Gradient' },
+              ]}
+            />
+
+            <Checkbox
+              label="Fill frame"
+              checked={fillParent}
+              onChange={(event) => setFillParent(event.currentTarget.checked)}
+            />
+
+            <div className="divider"></div>
 
             {renderControl("X Offset", xOffset, setXOffset, -50, 50, 1, "%")}
             {renderControl("Y Offset", yOffset, setYOffset, -50, 50, 1, "%")}
@@ -628,7 +649,12 @@ const App = () => {
               onChange={(event) => setSpiral(event.currentTarget.checked)}
             />
 
-            {renderControl("Spiral Intensity", spiralIntensity, setSpiralIntensity, 0, 1, 0.1, "", !spiral)}
+            {(spiral === true) && (
+              <>
+                {renderControl("Spiral Intensity", spiralIntensity, setSpiralIntensity, 0, 1, 0.1, "", !spiral)}
+              </>
+            )}
+
             {renderControl("Field Strength", intensity, setIntensity, 0.1, 2, 0.1, "x")}
             {(shape === 'line' || shape === 'arrow') && (
               <>
@@ -640,18 +666,6 @@ const App = () => {
               renderControl("Shape Size", shapeSize, setShapeSize, 0.1, 10, 0.1, "x")
             )}
             {renderControl("Vector Spacing", spacing, setSpacing, 0.5, 2, 0.1, "x")}
-            <Checkbox
-              label="Fill parent frame"
-              checked={fillParent}
-              onChange={(event) => setFillParent(event.currentTarget.checked)}
-            />
-            <Textarea
-              label="Paste SVG Code"
-              value={pastedSvg}
-              onChange={handleSvgPaste}
-              placeholder="Paste your SVG code here"
-              minRows={4}
-            />
           </div>
           <div className="button-wrapper">
             <Button

@@ -8,13 +8,19 @@
   font-size: 11px;
   margin-bottom: 8px;
   display: block;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 18px;
-  color: #0000009c;
+  color: #000000f0;
 }
 
 .preview {
   /* border-radius: 16px; */
+}
+
+.divider {
+  display: block;
+  margin: 24px -20px;
+  border-bottom: 1px solid #e6e6e6;
 }
 
 /* .preview-svg {
@@ -25,7 +31,7 @@
 .form {
   display: flex;
   flex-flow: column;
-  width: 352px;
+  width: 260px;
   height: 600px;
   border-left: 1px solid #e6e6e6;
 }
@@ -72,12 +78,16 @@
   gap: 20px;
 }
 
+.mantine-Textarea-root {
+  margin-bottom: 16px;
+}
+
 .mantine-InputWrapper-label {
   font-size: 11px;
   margin-bottom: 8px;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 18px;
-  color: #0000009c;
+  color: #000000f0;
 }
 
 .value-span {
