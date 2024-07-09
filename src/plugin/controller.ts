@@ -1,5 +1,7 @@
 figma.showUI(__html__, { width: 952, height: 600 });
 
+let lastSelectedFrame = null;
+
 figma.ui.onmessage = (msg) => {
   if (msg.type === 'create-svg') {
     createSvgNode(msg.svg, msg.width, msg.height, msg.backgroundColor);
@@ -69,6 +71,7 @@ figma.on('selectionchange', () => {
   const selection = figma.currentPage.selection;
   if (selection.length === 1) {
     if (selection[0].type === 'FRAME') {
+      lastSelectedFrame = selection[0];
       sendFrameInfo(selection[0]);
     } else if (selection[0].type === 'VECTOR') {
       sendVectorInfo(selection[0]);
@@ -78,8 +81,7 @@ figma.on('selectionchange', () => {
   }
 });
 
-// Function to create SVG node in Figma
-// Function to create SVG node in Figma
+
 function createSvgNode(svgString, width, height, backgroundColor) {
   console.log('Creating SVG node with:', { width, height, backgroundColor });
 
@@ -97,14 +99,11 @@ function createSvgNode(svgString, width, height, backgroundColor) {
     node.fills = [{ type: 'SOLID', color: { r, g, b } }];
   }
 
-  // Get the selected nodes
-  const selection = figma.currentPage.selection;
-
-  if (selection.length > 0) {
-    // Append the SVG node to the first selected node
-    selection[0].appendChild(node);
+  if (lastSelectedFrame) {
+    // Append the SVG node to the last selected frame
+    lastSelectedFrame.appendChild(node);
   } else {
-    // If no node is selected, find a non-overlapping position
+    // If no frame was selected, find a non-overlapping position
     const { x, y } = findNonOverlappingPosition(node);
     node.x = x;
     node.y = y;
@@ -113,16 +112,14 @@ function createSvgNode(svgString, width, height, backgroundColor) {
     figma.currentPage.selection = [node];
   }
 
-  // Now that the node is on the canvas, process its children
-  const children = node.children.slice(); // Get a copy of the children array
+  // Process the node's children (same as before)
+  const children = node.children.slice();
   children.forEach(child => {
     if (child.type === 'GROUP') {
       const grandChildren = child.children.slice();
       grandChildren.forEach(grandChild => {
         if (grandChild.type === 'FRAME') {
-          // Remove background fill
           grandChild.fills = [];
-          // Turn off clip-content
           grandChild.clipsContent = false;
         }
       });
@@ -131,8 +128,6 @@ function createSvgNode(svgString, width, height, backgroundColor) {
 
   // Zoom into the newly created node
   figma.viewport.scrollAndZoomIntoView([node]);
-
-  console.log('SVG node created successfully');
 }
 
 

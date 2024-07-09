@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 import '../styles/ui.css';
-import { NumberInput, Select, Slider, Checkbox, Button, ColorInput } from '@mantine/core';
+import { NumberInput, Select, Slider, Checkbox, Button, ColorInput, Textarea } from '@mantine/core';
 
 const App = () => {
   const [rows, setRows] = useState(20);
@@ -22,6 +22,7 @@ const App = () => {
   const [yOffset, setYOffset] = useState(0);
   const [field, setField] = useState([]);
   const [fillParent, setFillParent] = useState(true);
+  const [pastedSvg, setPastedSvg] = useState('');
 
   const [frameWidth, setFrameWidth] = useState(600);
   const [frameHeight, setFrameHeight] = useState(600);
@@ -207,30 +208,52 @@ const App = () => {
     };
   }, [updateFrameDimensions, getComplementaryColor]);
 
+  // const parseSvgString = (svgString) => {
+  //   console.log("Received SVG string:", svgString); // Log the received SVG string
+
+  //   if (!svgString || typeof svgString !== 'string') {
+  //     console.error('Invalid SVG string received:', svgString);
+  //     return;
+  //   }
+
+  //   const parser = new DOMParser();
+  //   const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+
+  //   // Check for parsing errors
+  //   const parserError = svgDoc.querySelector('parsererror');
+  //   if (parserError) {
+  //     console.error('Error parsing SVG:', parserError.textContent);
+  //     return;
+  //   }
+
+  //   const svgElement = svgDoc.querySelector('svg');
+
+  //   if (svgElement) {
+  //     const viewBox = svgElement.getAttribute('viewBox');
+  //     setCustomShapeViewBox(viewBox);
+
+  //     const paths = Array.from(svgElement.querySelectorAll('path')).map(path => ({
+  //       d: path.getAttribute('d'),
+  //       fill: path.getAttribute('fill') || 'none',
+  //       stroke: path.getAttribute('stroke') || 'none',
+  //       strokeWidth: path.getAttribute('stroke-width') || '1'
+  //     }));
+
+  //     setCustomShape(paths);
+  //     setShape('custom');
+  //     setIsWaitingForVectorSelection(false);
+  //   } else {
+  //     console.error('No SVG element found in the parsed document');
+  //   }
+  // };
+
   const parseSvgString = (svgString) => {
-    console.log("Received SVG string:", svgString); // Log the received SVG string
-
-    if (!svgString || typeof svgString !== 'string') {
-      console.error('Invalid SVG string received:', svgString);
-      return;
-    }
-
     const parser = new DOMParser();
     const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-
-    // Check for parsing errors
-    const parserError = svgDoc.querySelector('parsererror');
-    if (parserError) {
-      console.error('Error parsing SVG:', parserError.textContent);
-      return;
-    }
-
     const svgElement = svgDoc.querySelector('svg');
 
     if (svgElement) {
       const viewBox = svgElement.getAttribute('viewBox');
-      setCustomShapeViewBox(viewBox);
-
       const paths = Array.from(svgElement.querySelectorAll('path')).map(path => ({
         d: path.getAttribute('d'),
         fill: path.getAttribute('fill') || 'none',
@@ -239,8 +262,8 @@ const App = () => {
       }));
 
       setCustomShape(paths);
+      setCustomShapeViewBox(viewBox);
       setShape('custom');
-      setIsWaitingForVectorSelection(false);
     } else {
       console.error('No SVG element found in the parsed document');
     }
@@ -420,6 +443,20 @@ const App = () => {
     setIsWaitingForVectorSelection(false);
   };
 
+  const handleSvgPaste = (event) => {
+    setPastedSvg(event.target.value);
+    if (event.target.value) {
+      setShape('custom');
+    }
+  };
+
+  useEffect(() => {
+    if (pastedSvg) {
+      parseSvgString(pastedSvg);
+    }
+  }, [pastedSvg]);
+
+
   const sendSvgToFigma = () => {
     if (svgRef.current) {
       const svgElement = svgRef.current.cloneNode(true);
@@ -556,7 +593,7 @@ const App = () => {
               withScrollArea={false}
               data={[
                 { value: 'none', label: 'None' },
-                { value: 'radial', label: 'Radial Gradient' },
+                // { value: 'radial', label: 'Radial Gradient' },
                 { value: 'angular', label: 'Angular Gradient' },
                 { value: 'wave', label: 'Wave Gradient' },
               ]}
@@ -593,14 +630,27 @@ const App = () => {
 
             {renderControl("Spiral Intensity", spiralIntensity, setSpiralIntensity, 0, 1, 0.1, "", !spiral)}
             {renderControl("Field Strength", intensity, setIntensity, 0.1, 2, 0.1, "x")}
-            {renderControl("Line Length", vectorScale, setVectorScale, 0.1, 12, 0.1, "x")}
-            {renderControl("Line Thickness", lineThickness, setLineThickness, 0.1, 12, 0.1, "px", shape === 'dot' || shape === 'triangle')}
+            {(shape === 'line' || shape === 'arrow') && (
+              <>
+                {renderControl("Line Length", vectorScale, setVectorScale, 0.1, 12, 0.1, "x")}
+                {renderControl("Line Thickness", lineThickness, setLineThickness, 0.1, 12, 0.1, "px")}
+              </>
+            )}
+            {(shape === 'dot' || shape === 'triangle' || shape === 'custom') && (
+              renderControl("Shape Size", shapeSize, setShapeSize, 0.1, 10, 0.1, "x")
+            )}
             {renderControl("Vector Spacing", spacing, setSpacing, 0.5, 2, 0.1, "x")}
-            {renderControl("Shape Size", shapeSize, setShapeSize, 0.1, 10, 0.1, "x", shape === 'line')}
             <Checkbox
               label="Fill parent frame"
               checked={fillParent}
               onChange={(event) => setFillParent(event.currentTarget.checked)}
+            />
+            <Textarea
+              label="Paste SVG Code"
+              value={pastedSvg}
+              onChange={handleSvgPaste}
+              placeholder="Paste your SVG code here"
+              minRows={4}
             />
           </div>
           <div className="button-wrapper">
