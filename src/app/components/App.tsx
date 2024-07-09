@@ -23,6 +23,7 @@ const App = () => {
   const [field, setField] = useState([]);
   const [fillParent, setFillParent] = useState(true);
   const [pastedSvg, setPastedSvg] = useState('');
+  const [customShapeSource, setCustomShapeSource] = useState(null);
 
   const [frameWidth, setFrameWidth] = useState(600);
   const [frameHeight, setFrameHeight] = useState(600);
@@ -32,8 +33,9 @@ const App = () => {
   const [shapeColor, setShapeColor] = useState('#ffffff');
   const [customShape, setCustomShape] = useState(null);
   const [customShapeViewBox, setCustomShapeViewBox] = useState(null);
-  const [customShapeSize, setCustomShapeSize] = useState(1);
+  const [userChangedColor, setUserChangedColor] = useState(false);
   const [isWaitingForVectorSelection, setIsWaitingForVectorSelection] = useState(false);
+  const [userOverrideBgColor, setUserOverrideBgColor] = useState(false);
 
   const svgRef = useRef(null);
 
@@ -65,6 +67,10 @@ const App = () => {
           case 'magnetic':
             vectorAngle = Math.atan2(dy, dx) + Math.PI / 2 + direction * Math.PI / 180;
             length = 5 + r * 0.02 * intensity;
+            break;
+          case 'grid':
+            vectorAngle = direction * Math.PI / 180;
+            length = 5 * intensity;
             break;
           case 'electric':
             vectorAngle = Math.atan2(dy, dx) + direction * Math.PI / 180;
@@ -104,6 +110,14 @@ const App = () => {
     }
     return newField;
   }, [frameWidth, frameHeight]);
+
+  const handleShapeChange = (value) => {
+    setShape(value);
+    if (value === 'custom') {
+      setIsWaitingForVectorSelection(true);
+      parent.postMessage({ pluginMessage: { type: 'request-vector-selection' } }, '*');
+    }
+  };
 
   const updateFrameDimensions = useCallback((width, height) => {
     if (fillParent) {
@@ -179,25 +193,22 @@ const App = () => {
     window.onmessage = (event) => {
       const message = event.data.pluginMessage;
       if (message.type === "frame-selected") {
-        const { width, height, backgroundColor } = message;
+        const { width, height, backgroundColor: frameBgColor } = message;
         setActualFrameWidth(width);
         setActualFrameHeight(height);
         updateFrameDimensions(width, height);
-        if (backgroundColor) {
-          setBackgroundColor(backgroundColor);
-          const complementaryColor = getComplementaryColor(backgroundColor);
+        if (frameBgColor && !userOverrideBgColor) {
+          setBackgroundColor(frameBgColor);
+          const complementaryColor = getComplementaryColor(frameBgColor);
           setShapeColor(complementaryColor);
         }
       } else if (message.type === "vector-selected") {
         if (message.svg) {
-          parseSvgString(message.svg);
+          parseSvgString(message.svg, 'figma');
+          setIsWaitingForVectorSelection(false);
         } else {
           console.error('Received vector-selected message without SVG data');
         }
-      } else if (message.type === "vector-selection-error") {
-        setIsWaitingForVectorSelection(false);
-        console.error(message.message);
-        // You might want to show this error message to the user
       } else if (message.type === "no-frame-selected") {
         setActualFrameWidth(600);
         setActualFrameHeight(600);
@@ -206,64 +217,20 @@ const App = () => {
         setShapeColor('#ffffff');
       }
     };
-  }, [updateFrameDimensions, getComplementaryColor]);
+  }, [updateFrameDimensions, getComplementaryColor, userOverrideBgColor]);
 
-  // const parseSvgString = (svgString) => {
-  //   console.log("Received SVG string:", svgString); // Log the received SVG string
-
-  //   if (!svgString || typeof svgString !== 'string') {
-  //     console.error('Invalid SVG string received:', svgString);
-  //     return;
-  //   }
-
-  //   const parser = new DOMParser();
-  //   const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-
-  //   // Check for parsing errors
-  //   const parserError = svgDoc.querySelector('parsererror');
-  //   if (parserError) {
-  //     console.error('Error parsing SVG:', parserError.textContent);
-  //     return;
-  //   }
-
-  //   const svgElement = svgDoc.querySelector('svg');
-
-  //   if (svgElement) {
-  //     const viewBox = svgElement.getAttribute('viewBox');
-  //     setCustomShapeViewBox(viewBox);
-
-  //     const paths = Array.from(svgElement.querySelectorAll('path')).map(path => ({
-  //       d: path.getAttribute('d'),
-  //       fill: path.getAttribute('fill') || 'none',
-  //       stroke: path.getAttribute('stroke') || 'none',
-  //       strokeWidth: path.getAttribute('stroke-width') || '1'
-  //     }));
-
-  //     setCustomShape(paths);
-  //     setShape('custom');
-  //     setIsWaitingForVectorSelection(false);
-  //   } else {
-  //     console.error('No SVG element found in the parsed document');
-  //   }
-  // };
-
-  const parseSvgString = (svgString) => {
+  const parseSvgString = (svgString, source) => {
     const parser = new DOMParser();
     const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
     const svgElement = svgDoc.querySelector('svg');
 
     if (svgElement) {
       const viewBox = svgElement.getAttribute('viewBox');
-      const paths = Array.from(svgElement.querySelectorAll('path')).map(path => ({
-        d: path.getAttribute('d'),
-        fill: path.getAttribute('fill') || 'none',
-        stroke: path.getAttribute('stroke') || 'none',
-        strokeWidth: path.getAttribute('stroke-width') || '1'
-      }));
-
-      setCustomShape(paths);
       setCustomShapeViewBox(viewBox);
+      setCustomShape(svgString);
       setShape('custom');
+      setCustomShapeSource(source);
+      setUserChangedColor(false); // Reset this when a new custom shape is set
     } else {
       console.error('No SVG element found in the parsed document');
     }
@@ -272,10 +239,6 @@ const App = () => {
   useEffect(() => {
     updateFrameDimensions(actualFrameWidth, actualFrameHeight);
   }, [fillParent, actualFrameWidth, actualFrameHeight, updateFrameDimensions]);
-
-  useEffect(() => {
-    console.log('Frame dimensions updated:', { actualFrameWidth, actualFrameHeight });
-  }, [actualFrameWidth, actualFrameHeight]);
 
   const getGradientOpacity = useCallback((vector) => {
     const { x, y, r } = vector;
@@ -292,6 +255,37 @@ const App = () => {
     }
   }, [gradientType, frameWidth, frameHeight]);
 
+  const renderCustomSvg = useCallback(() => {
+    if (customShape && customShapeViewBox) {
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(customShape, 'image/svg+xml');
+      const svgElement = svgDoc.documentElement;
+
+      const updateColors = (element) => {
+        if (customShapeSource === 'figma') {
+          if (element.hasAttribute('fill') && element.getAttribute('fill') !== 'none') {
+            element.setAttribute('fill', shapeColor);
+          }
+          if (element.hasAttribute('stroke') && element.getAttribute('stroke') !== 'none') {
+            element.setAttribute('stroke', shapeColor);
+          }
+        }
+        Array.from(element.children).forEach(updateColors);
+      };
+
+      updateColors(svgElement);
+
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svgElement);
+
+      return (
+        <g dangerouslySetInnerHTML={{ __html: svgString }} />
+      );
+    }
+    return null;
+  }, [customShape, customShapeViewBox, shapeColor, userChangedColor, customShapeSource]);
+
+
   const renderVector = useCallback((vector, index) => {
     const scaledLength = vector.length * vectorScale;
     const endX = vector.x + Math.cos(vector.angle) * scaledLength;
@@ -305,7 +299,7 @@ const App = () => {
 
       // Calculate base size relative to the current frame dimensions
       const cellSize = Math.min(frameWidth / columns, frameHeight / rows);
-      const baseSize = cellSize * shapeSize;
+      const baseSize = cellSize * shapeSize; // Now incorporating shapeSize
 
       // Maintain aspect ratio while fitting within baseSize
       let scaledWidth, scaledHeight;
@@ -317,6 +311,27 @@ const App = () => {
         scaledWidth = baseSize * aspectRatio;
       }
 
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(customShape, 'image/svg+xml');
+      const svgElement = svgDoc.documentElement;
+
+      const updateColors = (element) => {
+        if (customShapeSource === 'figma') {
+          if (element.hasAttribute('fill') && element.getAttribute('fill') !== 'none') {
+            element.setAttribute('fill', shapeColor);
+          }
+          if (element.hasAttribute('stroke') && element.getAttribute('stroke') !== 'none') {
+            element.setAttribute('stroke', shapeColor);
+          }
+        }
+        Array.from(element.children).forEach(updateColors);
+      };
+
+      updateColors(svgElement);
+
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svgElement);
+
       return (
         <g key={index} transform={`translate(${endX - scaledWidth / 2}, ${endY - scaledHeight / 2}) rotate(${vector.angle * 180 / Math.PI})`}>
           <svg
@@ -324,17 +339,8 @@ const App = () => {
             width={scaledWidth}
             height={scaledHeight}
             style={{ overflow: 'visible' }}
-          >
-            {customShape.map((path, pathIndex) => (
-              <path
-                key={pathIndex}
-                d={path.d}
-                fill={path.fill === 'none' ? 'none' : color}
-                stroke={path.stroke === 'none' ? 'none' : color}
-                strokeWidth={path.strokeWidth}
-              />
-            ))}
-          </svg>
+            dangerouslySetInnerHTML={{ __html: svgString }}
+          />
         </g>
       );
     }
@@ -396,31 +402,25 @@ const App = () => {
       default:
         return null;
     }
-  }, [shape, shapeSize, vectorScale, lineThickness, getGradientOpacity, shapeColor, customShape, customShapeViewBox, customShapeSize]);
+  }, [shape, shapeSize, vectorScale, lineThickness, getGradientOpacity, shapeColor, customShape, customShapeViewBox, columns, rows, frameWidth, frameHeight, renderCustomSvg]);
 
-  const handleShapeChange = (value) => {
-    setShape(value);
-    if (value === 'custom') {
-      setIsWaitingForVectorSelection(true);
-      parent.postMessage({ pluginMessage: { type: 'request-vector-selection' } }, '*');
+  const handleSvgPaste = (event) => {
+    const pastedValue = event.target.value;
+    setPastedSvg(pastedValue);
+    if (pastedValue) {
+      parseSvgString(pastedValue, 'text');
     }
   };
 
-  const renderControl = (label, value, setValue, min, max, step, unit = '', disabled = false) => (
-    <div>
-      <label>
-        {label}: <span className="value-span">{value.toFixed(2)}</span> <span className="unit-span">{unit}</span>
-      </label>
-      <Slider
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={setValue}
-        disabled={disabled}
-      />
-    </div>
-  );
+  const handleColorChange = (color) => {
+    setShapeColor(color);
+    setUserChangedColor(true);
+  };
+
+  const handleBackgroundColorChange = (color) => {
+    setBackgroundColor(color);
+    setUserOverrideBgColor(true);
+  };
 
   const resetState = () => {
     setRows(20);
@@ -441,39 +441,27 @@ const App = () => {
     setFillParent(true);
     setCustomShape(null);
     setIsWaitingForVectorSelection(false);
+    setUserOverrideBgColor(false);
+    setUserChangedColor(false);
   };
-
-  const handleSvgPaste = (event) => {
-    setPastedSvg(event.target.value);
-    if (event.target.value) {
-      setShape('custom');
-    }
-  };
-
-  useEffect(() => {
-    if (pastedSvg) {
-      parseSvgString(pastedSvg);
-    }
-  }, [pastedSvg]);
-
 
   const sendSvgToFigma = () => {
     if (svgRef.current) {
       const svgElement = svgRef.current.cloneNode(true);
       const scaleX = actualFrameWidth / frameWidth;
       const scaleY = actualFrameHeight / frameHeight;
-  
+
       // Set the viewBox to match the original preview dimensions
       svgElement.setAttribute('viewBox', `0 0 ${frameWidth} ${frameHeight}`);
       svgElement.setAttribute('width', actualFrameWidth);
       svgElement.setAttribute('height', actualFrameHeight);
-  
+
       // We won't apply any scaling to individual elements
       // Instead, we'll let Figma handle the scaling based on the new width and height
-  
+
       const svgData = new XMLSerializer().serializeToString(svgElement);
       const cleanedSvgData = svgData.replace(/xmlns="[^"]*"/, '');
-  
+
       console.log('Sending data to Figma:', {
         svg: cleanedSvgData,
         width: actualFrameWidth,
@@ -484,7 +472,7 @@ const App = () => {
         scaleX,
         scaleY
       });
-  
+
       parent.postMessage({
         pluginMessage: {
           type: 'create-svg',
@@ -501,6 +489,22 @@ const App = () => {
       console.error('SVG ref is null');
     }
   };
+
+  const renderControl = (label, value, setValue, min, max, step, unit = '', disabled = false) => (
+    <div key={label}>
+      <label>
+        {label}: <span className="value-span">{value.toFixed(2)}</span> <span className="unit-span">{unit}</span>
+      </label>
+      <Slider
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={setValue}
+        disabled={disabled}
+      />
+    </div>
+  );
 
   return (
     <MantineProvider defaultColorScheme="light">
@@ -520,7 +524,7 @@ const App = () => {
               transform: 'translate(-50%, -50%)',
             }}
           >
-            {field && field.length > 0 ? field.map((vector, index) => renderVector(vector, index)) : null}
+            {field.map((vector, index) => renderVector(vector, index))}
           </svg>
         </div>
         <div className="form">
@@ -528,7 +532,7 @@ const App = () => {
             <Select
               label="Shape"
               value={shape}
-              onChange={handleShapeChange}
+              onChange={(value) => setShape(value)}
               withScrollArea={false}
               data={[
                 { value: 'line', label: 'Lines' },
@@ -540,15 +544,13 @@ const App = () => {
             />
 
             {(shape === 'custom') && (
-              <>
-                <Textarea
-                  label="Paste SVG Code"
-                  value={pastedSvg}
-                  onChange={handleSvgPaste}
-                  placeholder="Paste your SVG code here"
-                  minRows={4}
-                />
-              </>
+              <Textarea
+                label="Paste SVG Code"
+                value={pastedSvg}
+                onChange={handleSvgPaste}
+                placeholder="Select a vector layer or paste your SVG code here"
+                minRows={4}
+              />
             )}
 
             <Select
@@ -558,6 +560,7 @@ const App = () => {
               withScrollArea={false}
               data={[
                 { value: 'magnetic', label: 'Magnetic Field' },
+                { value: 'grid', label: 'Grid' }
                 { value: 'fluid', label: 'Fluid Flow' },
                 { value: 'electric', label: 'Electric Field' },
                 { value: 'vortex', label: 'Vortex' },
@@ -584,10 +587,30 @@ const App = () => {
             <ColorInput
               label="Shape Color"
               value={shapeColor}
-              onChange={setShapeColor}
+              onChange={handleColorChange}
               placeholder="Pick a color"
               leftSectionPointerEvents="auto"
             />
+
+            <ColorInput
+              label="Background Color"
+              value={backgroundColor}
+              onChange={handleBackgroundColorChange}
+              placeholder="Pick a background color"
+              leftSectionPointerEvents="auto"
+            />
+
+            {/* {userOverrideBgColor && (
+              <Button onClick={() => {
+                setUserOverrideBgColor(false);
+                // Reset to frame color if available, otherwise default
+                setBackgroundColor(prevState =>
+                  window.lastFrameBackgroundColor || '#1e1e1e'
+                );
+              }}>
+                Reset to Frame Background
+              </Button>
+            )} */}
 
             <Select
               label="Gradient Type"
@@ -596,7 +619,6 @@ const App = () => {
               withScrollArea={false}
               data={[
                 { value: 'none', label: 'None' },
-                // { value: 'radial', label: 'Radial Gradient' },
                 { value: 'angular', label: 'Angular Gradient' },
                 { value: 'wave', label: 'Wave Gradient' },
               ]}
@@ -613,28 +635,28 @@ const App = () => {
             {renderControl("X Offset", xOffset, setXOffset, -50, 50, 1, "%")}
             {renderControl("Y Offset", yOffset, setYOffset, -50, 50, 1, "%")}
             {renderControl("Field Rotation", direction, setDirection, 0, 360, 1, "°")}
+
             <Checkbox
               label="Additional spiral"
               checked={spiral}
               onChange={(event) => setSpiral(event.currentTarget.checked)}
             />
 
-            {(spiral === true) && (
-              <>
-                {renderControl("Spiral Intensity", spiralIntensity, setSpiralIntensity, 0, 1, 0.1, "", !spiral)}
-              </>
-            )}
+            {spiral && renderControl("Spiral Intensity", spiralIntensity, setSpiralIntensity, 0, 1, 0.1, "", !spiral)}
 
             {renderControl("Field Strength", intensity, setIntensity, 0.1, 2, 0.1, "x")}
+
             {(shape === 'line' || shape === 'arrow') && (
               <>
                 {renderControl("Line Length", vectorScale, setVectorScale, 0.1, 12, 0.1, "x")}
                 {renderControl("Line Thickness", lineThickness, setLineThickness, 0.1, 12, 0.1, "px")}
               </>
             )}
+
             {(shape === 'dot' || shape === 'triangle' || shape === 'custom') && (
               renderControl("Shape Size", shapeSize, setShapeSize, 0.1, 10, 0.1, "x")
             )}
+
             {renderControl("Vector Spacing", spacing, setSpacing, 0.5, 2, 0.1, "x")}
           </div>
           <div className="button-wrapper">
@@ -644,9 +666,7 @@ const App = () => {
             >
               Reset
             </Button>
-            <Button
-              onClick={sendSvgToFigma}
-            >
+            <Button onClick={sendSvgToFigma}>
               Send to Figma
             </Button>
           </div>
