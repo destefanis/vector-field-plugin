@@ -423,25 +423,46 @@ const App = () => {
   const sendSvgToFigma = () => {
     if (svgRef.current) {
       const svgElement = svgRef.current.cloneNode(true);
-      const scaleFactor = actualFrameWidth / frameWidth;
+      const scaleX = actualFrameWidth / frameWidth;
+      const scaleY = actualFrameHeight / frameHeight;
 
-      // Apply scaling transformation to the root SVG
+      // Set the viewBox to match the original preview dimensions
       svgElement.setAttribute('viewBox', `0 0 ${frameWidth} ${frameHeight}`);
       svgElement.setAttribute('width', actualFrameWidth);
       svgElement.setAttribute('height', actualFrameHeight);
 
-      // Function to apply scaling only to top-level elements
-      const applyScalingToTopLevelElements = (element) => {
-        const transform = element.getAttribute('transform') || '';
-        const newTransform = `${transform} scale(${scaleFactor})`.trim();
-        element.setAttribute('transform', newTransform);
+      // Function to apply scaling to elements
+      const applyScaling = (element) => {
+        const isCustomShape = element.tagName.toLowerCase() === 'g' && element.querySelector('svg');
+
+        if (isCustomShape) {
+          // For custom shapes, we don't apply scaling here
+          // Instead, we'll send the original dimensions and scale factor to Figma
+        } else if (element.tagName.toLowerCase() === 'circle') {
+          const cx = parseFloat(element.getAttribute('cx')) * scaleX;
+          const cy = parseFloat(element.getAttribute('cy')) * scaleY;
+          element.setAttribute('cx', cx);
+          element.setAttribute('cy', cy);
+          // Keep the radius constant to maintain relative size
+          // element.setAttribute('r', parseFloat(element.getAttribute('r')));
+        } else if (element.tagName.toLowerCase() === 'path') {
+          // For path elements, we need to scale the 'd' attribute
+          const d = element.getAttribute('d');
+          const scaledD = d.replace(/[\d.]+/g, (match) => {
+            const num = parseFloat(match);
+            return isNaN(num) ? match : (num * ((d.indexOf(match) % 2 === 0) ? scaleX : scaleY)).toFixed(4);
+          });
+          element.setAttribute('d', scaledD);
+        }
+
+        // Recursively apply scaling to child elements, but not for custom shapes
+        if (!isCustomShape) {
+          Array.from(element.children).forEach(applyScaling);
+        }
       };
 
       // Apply scaling to all immediate children of the root SVG
-      const childElements = svgElement.children;
-      for (let i = 0; i < childElements.length; i++) {
-        applyScalingToTopLevelElements(childElements[i]);
-      }
+      Array.from(svgElement.children).forEach(applyScaling);
 
       const svgData = new XMLSerializer().serializeToString(svgElement);
       const cleanedSvgData = svgData.replace(/xmlns="[^"]*"/, '');
@@ -453,7 +474,8 @@ const App = () => {
         backgroundColor,
         frameWidth,
         frameHeight,
-        scaleFactor
+        scaleX,
+        scaleY
       });
 
       parent.postMessage({
@@ -463,6 +485,9 @@ const App = () => {
           width: actualFrameWidth,
           height: actualFrameHeight,
           backgroundColor: backgroundColor,
+          scaleX: scaleX,
+          scaleY: scaleY,
+          isCustomShape: shape === 'custom'
         },
       }, '*');
     } else {
