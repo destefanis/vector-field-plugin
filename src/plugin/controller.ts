@@ -79,6 +79,7 @@ figma.on('selectionchange', () => {
 });
 
 // Function to create SVG node in Figma
+// Function to create SVG node in Figma
 function createSvgNode(svgString, width, height, backgroundColor) {
   console.log('Creating SVG node with:', { width, height, backgroundColor });
 
@@ -112,11 +113,28 @@ function createSvgNode(svgString, width, height, backgroundColor) {
     figma.currentPage.selection = [node];
   }
 
+  // Now that the node is on the canvas, process its children
+  const children = node.children.slice(); // Get a copy of the children array
+  children.forEach(child => {
+    if (child.type === 'GROUP') {
+      const grandChildren = child.children.slice();
+      grandChildren.forEach(grandChild => {
+        if (grandChild.type === 'FRAME') {
+          // Remove background fill
+          grandChild.fills = [];
+          // Turn off clip-content
+          grandChild.clipsContent = false;
+        }
+      });
+    }
+  });
+
   // Zoom into the newly created node
   figma.viewport.scrollAndZoomIntoView([node]);
 
   console.log('SVG node created successfully');
 }
+
 
 // Function to find a non-overlapping position
 function findNonOverlappingPosition(node) {
