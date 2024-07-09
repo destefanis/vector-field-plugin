@@ -462,48 +462,18 @@ const App = () => {
       const svgElement = svgRef.current.cloneNode(true);
       const scaleX = actualFrameWidth / frameWidth;
       const scaleY = actualFrameHeight / frameHeight;
-
+  
       // Set the viewBox to match the original preview dimensions
       svgElement.setAttribute('viewBox', `0 0 ${frameWidth} ${frameHeight}`);
       svgElement.setAttribute('width', actualFrameWidth);
       svgElement.setAttribute('height', actualFrameHeight);
-
-      // Function to apply scaling to elements
-      const applyScaling = (element) => {
-        const isCustomShape = element.tagName.toLowerCase() === 'g' && element.querySelector('svg');
-
-        if (isCustomShape) {
-          // For custom shapes, we don't apply scaling here
-          // Instead, we'll send the original dimensions and scale factor to Figma
-        } else if (element.tagName.toLowerCase() === 'circle') {
-          const cx = parseFloat(element.getAttribute('cx')) * scaleX;
-          const cy = parseFloat(element.getAttribute('cy')) * scaleY;
-          element.setAttribute('cx', cx);
-          element.setAttribute('cy', cy);
-          // Keep the radius constant to maintain relative size
-          // element.setAttribute('r', parseFloat(element.getAttribute('r')));
-        } else if (element.tagName.toLowerCase() === 'path') {
-          // For path elements, we need to scale the 'd' attribute
-          const d = element.getAttribute('d');
-          const scaledD = d.replace(/[\d.]+/g, (match) => {
-            const num = parseFloat(match);
-            return isNaN(num) ? match : (num * ((d.indexOf(match) % 2 === 0) ? scaleX : scaleY)).toFixed(4);
-          });
-          element.setAttribute('d', scaledD);
-        }
-
-        // Recursively apply scaling to child elements, but not for custom shapes
-        if (!isCustomShape) {
-          Array.from(element.children).forEach(applyScaling);
-        }
-      };
-
-      // Apply scaling to all immediate children of the root SVG
-      Array.from(svgElement.children).forEach(applyScaling);
-
+  
+      // We won't apply any scaling to individual elements
+      // Instead, we'll let Figma handle the scaling based on the new width and height
+  
       const svgData = new XMLSerializer().serializeToString(svgElement);
       const cleanedSvgData = svgData.replace(/xmlns="[^"]*"/, '');
-
+  
       console.log('Sending data to Figma:', {
         svg: cleanedSvgData,
         width: actualFrameWidth,
@@ -514,7 +484,7 @@ const App = () => {
         scaleX,
         scaleY
       });
-
+  
       parent.postMessage({
         pluginMessage: {
           type: 'create-svg',
