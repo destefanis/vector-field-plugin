@@ -4,9 +4,11 @@ let lastSelectedFrame = null;
 
 figma.ui.onmessage = (msg) => {
   if (msg.type === 'create-svg') {
-    createSvgNode(msg.svg, msg.width, msg.height, msg.backgroundColor);
+    createSvgNode(msg.svg, msg.width, msg.height, msg.backgroundColor, msg.isCustomShape);
   } else if (msg.type === 'request-vector-selection') {
     requestVectorSelection();
+  } else if (msg.type === 'close-plugin') {
+    figma.closePlugin();
   }
 };
 
@@ -27,7 +29,7 @@ function sendFrameInfo(frame) {
 async function sendVectorInfo(vector) {
   try {
     const svgString = await vector.exportAsync({ format: 'SVG_STRING' });
-    console.log("Exported SVG string:", svgString); // Log the exported SVG string
+    console.log("Exported SVG string:", svgString);
     figma.ui.postMessage({
       type: 'vector-selected',
       svg: svgString,
@@ -55,94 +57,88 @@ function requestVectorSelection() {
   }
 }
 
-// Send initial frame or vector info if one is selected
-const selection = figma.currentPage.selection;
-if (selection.length === 1) {
-  if (selection[0].type === 'FRAME') {
-    sendFrameInfo(selection[0]);
-  } else if (selection[0].type === 'VECTOR') {
-    sendVectorInfo(selection[0]);
+function updateSelectedFrame() {
+  const selection = figma.currentPage.selection;
+  if (selection.length === 1 && selection[0].type === 'FRAME') {
+    lastSelectedFrame = selection[0];
+    sendFrameInfo(lastSelectedFrame);
+  } else {
+    lastSelectedFrame = null;
+    figma.ui.postMessage({ type: 'no-frame-selected' });
   }
-} else {
-  figma.ui.postMessage({ type: 'no-frame-selected' });
 }
 
+// Initial selection check
+updateSelectedFrame();
+
 figma.on('selectionchange', () => {
+  updateSelectedFrame();
+  
   const selection = figma.currentPage.selection;
-  if (selection.length === 1) {
-    if (selection[0].type === 'FRAME') {
-      lastSelectedFrame = selection[0];
-      sendFrameInfo(selection[0]);
-    } else if (selection[0].type === 'VECTOR') {
-      sendVectorInfo(selection[0]);
-    }
-  } else {
-    figma.ui.postMessage({ type: 'no-frame-selected' });
+  if (selection.length === 1 && selection[0].type === 'VECTOR') {
+    sendVectorInfo(selection[0]);
   }
 });
 
-
-function createSvgNode(svgString, width, height, backgroundColor) {
+function createSvgNode(svgString, width, height, backgroundColor, isCustomShape) {
   console.log('Creating SVG node with:', { width, height, backgroundColor });
 
-  // Create a new node from the SVG string
   const node = figma.createNodeFromSvg(svgString);
-
   node.name = "Vector Field Generator";
 
-  // Set the size of the node
   if (width && height) {
     node.resize(width, height);
   }
 
-  // Set the background color if provided
   if (backgroundColor) {
     const [r, g, b] = backgroundColor.match(/\w\w/g).map(x => parseInt(x, 16) / 255);
     node.fills = [{ type: 'SOLID', color: { r, g, b } }];
   }
 
-  if (lastSelectedFrame) {
-    // Append the SVG node to the last selected frame
+  // Check if a frame is currently selected
+  const currentSelection = figma.currentPage.selection;
+  const selectedFrame = currentSelection.length === 1 && currentSelection[0].type === 'FRAME' ? currentSelection[0] : null;
+
+  if (selectedFrame) {
+    selectedFrame.appendChild(node);
+  } else if (lastSelectedFrame) {
     lastSelectedFrame.appendChild(node);
   } else {
-    // If no frame was selected, find a non-overlapping position
     const { x, y } = findNonOverlappingPosition(node);
     node.x = x;
     node.y = y;
     figma.currentPage.appendChild(node);
-    // Select the newly created node
-    figma.currentPage.selection = [node];
   }
 
-  // Process the node's children (same as before)
-  const children = node.children.slice();
-  children.forEach(child => {
-    if (child.type === 'GROUP') {
-      const grandChildren = child.children.slice();
-      grandChildren.forEach(grandChild => {
-        if (grandChild.type === 'FRAME') {
-          grandChild.fills = [];
-          grandChild.clipsContent = false;
-        }
-      });
-    }
-  });
+  figma.currentPage.selection = [node];
 
-  // Zoom into the newly created node
+  // Recursive function to process all children
+  function processNode(node) {
+    if (node.type === 'FRAME') {
+      node.fills = [];
+      node.clipsContent = false;
+    }
+
+    if ('children' in node) {
+      node.children.forEach(child => processNode(child));
+    }
+  }
+
+  // Process all children of the main SVG node
+  if (isCustomShape) {
+    processNode(node);
+  }
+
   figma.viewport.scrollAndZoomIntoView([node]);
 }
 
-
-// Function to find a non-overlapping position
 function findNonOverlappingPosition(node) {
   const PADDING = 20;
   const nodes = figma.currentPage.children;
 
-  // Initial position
   let x = PADDING;
   let y = PADDING;
 
-  // Function to check if the proposed position overlaps with existing nodes
   const doesOverlap = (x, y, width, height) => {
     return nodes.some(existingNode => {
       const ex = existingNode.x;
@@ -154,7 +150,6 @@ function findNonOverlappingPosition(node) {
     });
   };
 
-  // Check for a non-overlapping position
   while (doesOverlap(x, y, node.width, node.height)) {
     x += PADDING + node.width;
 

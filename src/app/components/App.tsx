@@ -3,6 +3,7 @@ import { MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
 import '../styles/ui.css';
 import { NumberInput, Select, Slider, Checkbox, Button, ColorInput, Textarea } from '@mantine/core';
+import CustomColorInput from './CustomColorInput';
 
 const App = () => {
   const [rows, setRows] = useState(20);
@@ -11,6 +12,7 @@ const App = () => {
   const [direction, setDirection] = useState(0);
   const [intensity, setIntensity] = useState(1);
   const [shape, setShape] = useState('line');
+  const [roundedCorners, setRoundedCorners] = useState(true);
   const [spiral, setSpiral] = useState(true);
   const [spiralIntensity, setSpiralIntensity] = useState(0.1);
   const [gradientType, setGradientType] = useState('none');
@@ -18,6 +20,8 @@ const App = () => {
   const [vectorScale, setVectorScale] = useState(1);
   const [lineThickness, setLineThickness] = useState(1);
   const [spacing, setSpacing] = useState(1);
+  const [xSpacing, setXSpacing] = useState(1);
+  const [ySpacing, setYSpacing] = useState(1);
   const [xOffset, setXOffset] = useState(0);
   const [yOffset, setYOffset] = useState(0);
   const [field, setField] = useState([]);
@@ -39,7 +43,7 @@ const App = () => {
 
   const svgRef = useRef(null);
 
-  const generateField = useCallback((rows, columns, type, direction, intensity, spiral, spiralIntensity, spacing, xOffsetPercent, yOffsetPercent) => {
+  const generateField = useCallback((rows, columns, type, direction, intensity, spiral, spiralIntensity, xSpacing, ySpacing, xOffsetPercent, yOffsetPercent) => {
     const newField = [];
     const cellWidth = frameWidth / (columns - 1);
     const cellHeight = frameHeight / (rows - 1);
@@ -53,8 +57,8 @@ const App = () => {
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < columns; x++) {
         let vectorAngle = 0, length = 5;
-        const posX = x * cellWidth * spacing;
-        const posY = y * cellHeight * spacing;
+        const posX = x * cellWidth * xSpacing;
+        const posY = y * cellHeight * ySpacing;
         const dx = posX - centerX + xOffset;
         const dy = posY - centerY + yOffset;
         const r = Math.sqrt(dx * dx + dy * dy);
@@ -67,10 +71,6 @@ const App = () => {
           case 'magnetic':
             vectorAngle = Math.atan2(dy, dx) + Math.PI / 2 + direction * Math.PI / 180;
             length = 5 + r * 0.02 * intensity;
-            break;
-          case 'grid':
-            vectorAngle = direction * Math.PI / 180;
-            length = 5 * intensity;
             break;
           case 'electric':
             vectorAngle = Math.atan2(dy, dx) + direction * Math.PI / 180;
@@ -96,11 +96,24 @@ const App = () => {
             vectorAngle = direction * Math.PI / 180 + Math.sin((posY + yOffset) * 0.1 + seed) * 0.5;
             length = (5 + Math.cos((posX + xOffset) * 0.1 + seed) * 2) * intensity;
             break;
+          case 'grid':
+            vectorAngle = direction * Math.PI / 180;
+            length = 5 * intensity;
+            break;
+          case 'half-screen':
+            if (posY >= frameHeight / 2) {
+              vectorAngle = direction * Math.PI / 180;
+              length = 5 * intensity;
+            } else {
+              continue;
+            }
+            break;
           default:
             console.warn(`Unknown field type: ${type}`);
+            continue;
         }
 
-        if (spiral) {
+        if (spiral && type !== 'grid' && type !== 'half-screen') {
           const spiralAngle = Math.atan2(dy, dx) + r * spiralIntensity * 0.1;
           vectorAngle = (vectorAngle + spiralAngle) / 2;
         }
@@ -137,6 +150,8 @@ const App = () => {
     } else {
       setFrameWidth(600);
       setFrameHeight(600);
+      setActualFrameHeight(600);
+      setActualFrameWidth(600);
     }
   }, [fillParent]);
 
@@ -185,9 +200,9 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    const newField = generateField(rows, columns, fieldType, direction, intensity, spiral, spiralIntensity, spacing, xOffset, yOffset);
+    const newField = generateField(rows, columns, fieldType, direction, intensity, spiral, spiralIntensity, xSpacing, ySpacing, xOffset, yOffset);
     setField(newField);
-  }, [rows, columns, fieldType, direction, intensity, spiral, spiralIntensity, spacing, xOffset, yOffset, generateField]);
+  }, [rows, columns, fieldType, direction, intensity, spiral, spiralIntensity, xSpacing, ySpacing, xOffset, yOffset, generateField]);
 
   useEffect(() => {
     window.onmessage = (event) => {
@@ -240,12 +255,22 @@ const App = () => {
     updateFrameDimensions(actualFrameWidth, actualFrameHeight);
   }, [fillParent, actualFrameWidth, actualFrameHeight, updateFrameDimensions]);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        // Send a message to the plugin to close itself
+        parent.postMessage({ pluginMessage: { type: 'close-plugin' } }, '*');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+  }, []);
+
   const getGradientOpacity = useCallback((vector) => {
     const { x, y, r } = vector;
     const maxR = Math.sqrt(frameWidth * frameWidth / 4 + frameHeight * frameHeight / 4);
     switch (gradientType) {
       case 'radial':
-        return 1 - r / maxR;
+        return Math.max(0, 1 - r / maxR);
       case 'angular':
         return (Math.atan2(y - frameHeight / 2, x - frameWidth / 2) + Math.PI) / (2 * Math.PI);
       case 'wave':
@@ -297,11 +322,9 @@ const App = () => {
       const [, , vbWidth, vbHeight] = customShapeViewBox.split(' ').map(Number);
       const aspectRatio = vbWidth / vbHeight;
 
-      // Calculate base size relative to the current frame dimensions
       const cellSize = Math.min(frameWidth / columns, frameHeight / rows);
-      const baseSize = cellSize * shapeSize; // Now incorporating shapeSize
+      const baseSize = cellSize * shapeSize;
 
-      // Maintain aspect ratio while fitting within baseSize
       let scaledWidth, scaledHeight;
       if (aspectRatio > 1) {
         scaledWidth = baseSize;
@@ -316,12 +339,12 @@ const App = () => {
       const svgElement = svgDoc.documentElement;
 
       const updateColors = (element) => {
-        if (customShapeSource === 'figma') {
+        if (customShapeSource === 'figma' || gradientType !== 'none') {
           if (element.hasAttribute('fill') && element.getAttribute('fill') !== 'none') {
-            element.setAttribute('fill', shapeColor);
+            element.setAttribute('fill', color);
           }
           if (element.hasAttribute('stroke') && element.getAttribute('stroke') !== 'none') {
-            element.setAttribute('stroke', shapeColor);
+            element.setAttribute('stroke', color);
           }
         }
         Array.from(element.children).forEach(updateColors);
@@ -356,6 +379,7 @@ const App = () => {
             y2={endY}
             stroke={color}
             strokeWidth={lineThickness}
+            strokeLinecap={roundedCorners ? 'round' : 'butt'}
           />
         );
       case 'dot':
@@ -402,7 +426,7 @@ const App = () => {
       default:
         return null;
     }
-  }, [shape, shapeSize, vectorScale, lineThickness, getGradientOpacity, shapeColor, customShape, customShapeViewBox, columns, rows, frameWidth, frameHeight, renderCustomSvg]);
+  }, [shape, shapeSize, vectorScale, lineThickness, getGradientOpacity, shapeColor, customShape, customShapeViewBox, columns, rows, frameWidth, frameHeight, renderCustomSvg, roundedCorners]);
 
   const handleSvgPaste = (event) => {
     const pastedValue = event.target.value;
@@ -429,6 +453,7 @@ const App = () => {
     setDirection(0);
     setIntensity(1);
     setShape('line');
+    setRoundedCorners(true);
     setSpiral(true);
     setSpiralIntensity(0.1);
     setGradientType('none');
@@ -438,11 +463,16 @@ const App = () => {
     setSpacing(1);
     setXOffset(0);
     setYOffset(0);
+    setXSpacing(1);
+    setYSpacing(1);
     setFillParent(true);
     setCustomShape(null);
     setIsWaitingForVectorSelection(false);
     setUserOverrideBgColor(false);
     setUserChangedColor(false);
+    setCustomShape(null);
+    setCustomShapeViewBox(null);
+    setPastedSvg('');
   };
 
   const sendSvgToFigma = () => {
@@ -537,6 +567,7 @@ const App = () => {
               value={shape}
               onChange={(value) => setShape(value)}
               withScrollArea={false}
+              allowDeselect={false}
               data={[
                 { value: 'line', label: 'Lines' },
                 { value: 'dot', label: 'Dots' },
@@ -561,6 +592,7 @@ const App = () => {
               value={fieldType}
               onChange={setFieldType}
               withScrollArea={false}
+              allowDeselect={false}
               data={[
                 { value: 'magnetic', label: 'Magnetic Field' },
                 { value: 'grid', label: 'Grid' }
@@ -571,6 +603,7 @@ const App = () => {
                 { value: 'source', label: 'Source' },
                 { value: 'saddle', label: 'Saddle Point' },
                 { value: 'wind', label: 'Wind Flow' },
+                { value: 'half-screen', label: 'Half Screen' },
               ]}
             />
 
@@ -579,56 +612,48 @@ const App = () => {
                 label="Rows"
                 value={rows}
                 onChange={(val) => setRows(Math.max(2, val))}
+                allowNegative={false}
+                min={2}
               />
               <NumberInput
                 label="Columns"
                 value={columns}
                 onChange={(val) => setColumns(Math.max(2, val))}
+                allowNegative={false}
+                min={2}
               />
             </div>
 
-            <ColorInput
-              label="Shape Color"
-              value={shapeColor}
-              onChange={handleColorChange}
-              placeholder="Pick a color"
-              leftSectionPointerEvents="auto"
-            />
-
-            <ColorInput
+            <CustomColorInput
               label="Background Color"
               value={backgroundColor}
-              onChange={handleBackgroundColorChange}
-              placeholder="Pick a background color"
-              leftSectionPointerEvents="auto"
+              onChange={setBackgroundColor}
+              format="hex"
             />
 
-            {/* {userOverrideBgColor && (
-              <Button onClick={() => {
-                setUserOverrideBgColor(false);
-                // Reset to frame color if available, otherwise default
-                setBackgroundColor(prevState =>
-                  window.lastFrameBackgroundColor || '#1e1e1e'
-                );
-              }}>
-                Reset to Frame Background
-              </Button>
-            )} */}
+            <CustomColorInput
+              label="Shape Color"
+              value={shapeColor}
+              onChange={setShapeColor}
+              format="hex"
+            />
 
             <Select
               label="Gradient Type"
               value={gradientType}
               onChange={setGradientType}
               withScrollArea={false}
+              allowDeselect={false}
               data={[
                 { value: 'none', label: 'None' },
                 { value: 'angular', label: 'Angular Gradient' },
+                { value: 'radial', label: 'Radial Gradient' },
                 { value: 'wave', label: 'Wave Gradient' },
               ]}
             />
 
             <Checkbox
-              label="Fill frame"
+              label="Use selected frame size"
               checked={fillParent}
               onChange={(event) => setFillParent(event.currentTarget.checked)}
             />
@@ -647,12 +672,19 @@ const App = () => {
 
             {spiral && renderControl("Spiral Intensity", spiralIntensity, setSpiralIntensity, 0, 1, 0.1, "", !spiral)}
 
-            {renderControl("Field Strength", intensity, setIntensity, 0.1, 2, 0.1, "x")}
+            {renderControl("Field Strength", intensity, setIntensity, 0.1, 20, 0.1, "x")}
 
             {(shape === 'line' || shape === 'arrow') && (
               <>
                 {renderControl("Line Length", vectorScale, setVectorScale, 0.1, 12, 0.1, "x")}
                 {renderControl("Line Thickness", lineThickness, setLineThickness, 0.1, 12, 0.1, "px")}
+                {shape === 'line' && (
+                  <Checkbox
+                    label="Rounded corners"
+                    checked={roundedCorners}
+                    onChange={(event) => setRoundedCorners(event.currentTarget.checked)}
+                  />
+                )}
               </>
             )}
 
@@ -660,7 +692,9 @@ const App = () => {
               renderControl("Shape Size", shapeSize, setShapeSize, 0.1, 10, 0.1, "x")
             )}
 
-            {renderControl("Vector Spacing", spacing, setSpacing, 0.5, 2, 0.1, "x")}
+            {/* {renderControl("Vector Spacing", spacing, setSpacing, 0.5, 2, 0.1, "x")} */}
+            {renderControl("X Spacing", xSpacing, setXSpacing, 0.5, 10, 0.1, "x")}
+            {renderControl("Y Spacing", ySpacing, setYSpacing, 0.5, 10, 0.1, "x")}
           </div>
           <div className="button-wrapper">
             <Button
