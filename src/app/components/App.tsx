@@ -614,6 +614,7 @@ const App = () => {
                 onChange={(val) => setRows(Math.max(2, val))}
                 allowNegative={false}
                 min={2}
+                max={500}
               />
               <NumberInput
                 label="Columns"
@@ -621,6 +622,7 @@ const App = () => {
                 onChange={(val) => setColumns(Math.max(2, val))}
                 allowNegative={false}
                 min={2}
+                max={500}
               />
             </div>
 
